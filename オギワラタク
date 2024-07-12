@@ -1,0 +1,235 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import time
+
+# Ensure inline plotting in Jupyter Notebook
+%matplotlib inline
+
+# Parameters
+L = 1.0  # Length of the rod
+T = 0.1  # Total time
+nx = 50  # Number of spatial points
+nt = 100  # Number of time steps
+dx = L / (nx - 1)  # Spatial step size
+dt = T / nt  # Time step size
+alpha = 1.0  # Thermal diffusivity
+r = alpha * dt / dx**2  # Stability parameter
+
+# Initial condition
+x = np.linspace(0, L, nx)
+u_initial = np.sin(np.pi * x)
+
+# 1. Explicit and implicit methods: numerical stability
+def explicit_scheme(u_initial, nt, nx, r):
+    u = np.zeros((nt, nx))
+    u[0, :] = u_initial
+    for n in range(0, nt-1):
+        for i in range(1, nx-1):
+            u[n+1, i] = u[n, i] + r * (u[n, i-1] - 2*u[n, i] + u[n, i+1])
+    return u
+
+def implicit_scheme(u_initial, nt, nx, r):
+    u = np.zeros((nt, nx))
+    u[0, :] = u_initial
+
+    A = np.zeros((nx-2, nx-2))
+    B = np.zeros((nx-2, nx-2))
+    for i in range(nx-2):
+        A[i, i] = 1 + r
+        B[i, i] = 1 - r
+        if i > 0:
+            A[i, i-1] = -r/2
+            B[i, i-1] = r/2
+        if i < nx-3:
+            A[i, i+1] = -r/2
+            B[i, i+1] = r/2
+
+    for n in range(0, nt-1):
+        u_inner = u[n, 1:-1]
+        b = np.dot(B, u_inner)
+        u[n+1, 1:-1] = np.linalg.solve(A, b)
+    
+    return u
+
+u_explicit = explicit_scheme(u_initial, nt, nx, r)
+u_implicit = implicit_scheme(u_initial, nt, nx, r)
+
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+for i in range(0, nt, nt//5):
+    plt.plot(x, u_explicit[i, :], label=f't={i*dt:.3f}')
+plt.xlabel('Position [x]')
+plt.ylabel('Temperature [u]')
+plt.title('Explicit Method (FTCS)')
+plt.legend()
+
+plt.subplot(1, 2, 2)
+for i in range(0, nt, nt//5):
+    plt.plot(x, u_implicit[i, :], label=f't={i*dt:.3f}')
+plt.xlabel('Position [x]')
+plt.ylabel('Temperature [u]')
+plt.title('Implicit Method (Crank-Nicolson)')
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+# 2. Time step and error (accuracy) relationship
+def exact_solution(x, t):
+    return np.exp(-np.pi**2 * t) * np.sin(np.pi * x)
+
+time_steps = [50, 100, 200, 400]
+
+plt.figure(figsize=(10, 6))
+
+for nt in time_steps:
+    dt = T / nt
+    r = alpha * dt / dx**2
+    u = explicit_scheme(u_initial, nt, nx, r)
+    t = nt * dt
+    u_exact = exact_solution(x, t)
+    error = np.abs(u[-1, :] - u_exact)
+    plt.plot(x, error, label=f'nt={nt}, dt={dt:.5f}')
+
+plt.xlabel('Position [x]')
+plt.ylabel('Error [|u - u_exact|]')
+plt.title('Time Step and Error Relationship (Explicit Method)')
+plt.legend()
+plt.show()
+
+# 3. Comparison of computational efficiency
+def measure_time(method, nt, nx, r):
+    start_time = time.time()
+    if method == 'explicit':
+        u = explicit_scheme(u_initial, nt, nx, r)
+    elif method == 'implicit':
+        u = implicit_scheme(u_initial, nt, nx, r)
+    end_time = time.time()
+    return end_time - start_time
+
+nt_values = [50, 100, 200, 400]
+explicit_times = []
+implicit_times = []
+
+for nt in nt_values:
+    dt = T / nt
+    r = alpha * dt / dx**2
+    explicit_times.append(measure_time('explicit', nt, nx, r))
+    implicit_times.append(measure_time('implicit', nt, nx, r))
+
+plt.figure(figsize=(10, 6))
+plt.plot(nt_values, explicit_times, label='Explicit Method (FTCS)')
+plt.plot(nt_values, implicit_times, label='Implicit Method (Crank-Nicolson)')
+plt.xlabel('Number of Time Steps [nt]')
+plt.ylabel('Computation Time [s]')
+plt.title('Computational Efficiency Comparison')
+plt.legend()
+plt.show()
+
+# 4. Spatial discretization effects
+space_steps = [10, 20, 50, 100]
+
+plt.figure(figsize=(10, 6))
+
+for nx in space_steps:
+    dx = L / (nx - 1)
+    r = alpha * dt / dx**2
+    x = np.linspace(0, L, nx)
+    u_initial = np.sin(np.pi * x)
+    u = explicit_scheme(u_initial, nt, nx, r)
+    plt.plot(x, u[-1, :], label=f'nx={nx}')
+
+plt.xlabel('Position [x]')
+plt.ylabel('Temperature [u]')
+plt.title('Spatial Discretization Effects (Explicit Method)')
+plt.legend()
+plt.show()
+
+# 5. Initial condition effects
+initial_conditions = [
+    ("Sine wave", np.sin(np.pi * x)),  # Sine wave
+    ("Steady state", np.ones_like(x)),  # Steady state
+    ("Gaussian distribution", np.exp(-10 * (x - L/2)**2))  # Gaussian distribution
+]
+
+plt.figure(figsize=(12, 6))
+
+for label, init_cond in initial_conditions:
+    u = explicit_scheme(init_cond, nt, nx, r)
+    plt.plot(x, u[-1, :], label=f'{label}')
+
+plt.xlabel('Position [x]')
+plt.ylabel('Temperature [u]')
+plt.title('Initial Condition Effects (Explicit Method)')
+plt.legend()
+plt.show()
+
+# Plot initial conditions and their final states
+plt.figure(figsize=(12, 6))
+
+for label, init_cond in initial_conditions:
+    u = explicit_scheme(init_cond, nt, nx, r)
+    plt.subplot(1, 2, 1)
+    plt.plot(x, init_cond, label=f'Initial: {label}')
+    plt.subplot(1, 2, 2)
+    plt.plot(x, u[-1, :], label=f'Final: {label}')
+
+plt.subplot(1, 2, 1)
+plt.xlabel('Position [x]')
+plt.ylabel('Temperature [u]')
+plt.title('Initial Temperature Distributions')
+plt.legend()
+
+plt.subplot(1, 2, 2)
+plt.xlabel('Position [x]')
+plt.ylabel('Temperature [u]')
+plt.title('Final Temperature Distributions')
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+# 6. Boundary condition effects
+boundary_conditions = [
+    ("Dirichlet 0, 0", 0, 0),  # Dirichlet boundary conditions
+    ("Neumann 1, 1", 1, 1),  # Neumann boundary conditions
+    ("Mixed 0, 1", 0, 1)  # Mixed boundary conditions
+]
+
+plt.figure(figsize=(12, 6))
+
+for label, bc_left, bc_right in boundary_conditions:
+    u = np.zeros((nt, nx))
+    u[0, :] = u_initial
+    u[:, 0] = bc_left
+    u[:, -1] = bc_right
+    for n in range(0, nt-1):
+        for i in range(1, nx-1):
+            u[n+1, i] = u[n, i] + r * (u[n, i-1] - 2*u[n, i] + u[n, i+1])
+    plt.plot(x, u[-1, :], label=f'{label}')
+
+plt.xlabel('Position [x]')
+plt.ylabel('Temperature [u]')
+plt.title('Boundary Condition Effects (Explicit Method)')
+plt.legend()
+plt.show()
+
+# Plot boundary conditions and their effects over time
+plt.figure(figsize=(12, 6))
+
+for label, bc_left, bc_right in boundary_conditions:
+    u = np.zeros((nt, nx))
+    u[0, :] = u_initial
+    u[:, 0] = bc_left
+    u[:, -1] = bc_right
+    for n in range(0, nt-1):
+        for i in range(1, nx-1):
+            u[n+1, i] = u[n, i] + r * (u[n, i-1] - 2*u[n, i] + u[n, i+1])
+    for i in range(0, nt, nt//5):
+        plt.plot(x, u[i, :], label=f'{label} t={i*dt:.3f}')
+
+plt.xlabel('Position [x]')
+plt.ylabel('Temperature [u]')
+plt.title('Boundary Condition Effects Over Time')
+plt.legend()
+plt.show()
